@@ -36,7 +36,7 @@ function Send-ExpiryNotice {
                     https://ucunleashed.com/318
         
         .LINK
-            https://github.com/Velynna/Email-ExpiryNotice
+            https://github.com/Velynna/New-AdPasswordReminder
         
         .INPUTS
             None. You cannot pipe objects to Send-ExpiryNotice.
