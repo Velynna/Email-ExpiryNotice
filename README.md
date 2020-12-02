@@ -26,7 +26,6 @@ Update notes from 3.0 to 4.0.
 + Updated Notes.
 + Expanded Parameter blocks, and updated CmdletBinding blocks.
 + Removed extraneous variables, and lines that had been commented out.
-  + Variables for company info were removed in favor of hard-coded information. Unfortunately the side-effect is that slightly more advanced knowledge is required for use.
 + Added email at the very end of the process block to notify when the task has completed.
 + Updated EventLog text.
 + Added Debug checks.
