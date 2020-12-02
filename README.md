@@ -18,7 +18,7 @@ Update notes from 3.0 to 4.0.
 + Remaining files moved into 1 single file, with a line to call at the end.
   + This makes it easier for a task schedule, and means less files to lose.
 + Dramatic changes to $EmailBody
-  + Replaced content with branded email. (Branding has been removed.)
+  + Replaced content with branded email. (Branding has been flattened prior to publication.)
   + Email uses a responsive design with in-line styling.
   + Instead of if/else logic within the email, the email was changed to a solid block with variables, and the variables are used in if/else logic before the EmailBody variable.
   + Variables with company data were updated for the new email template.
