@@ -293,7 +293,7 @@ function Send-ExpiryNotice {
                                             # is required.
                                             $TitleBkgd = '#E67E22'
                                         } else {
-                                            $TitleBkgd = '#F4D03F'
+                                            $TitleBkgd = '#000000'
                                         }
                                     }
                                     Write-Debug "$(Get-Date -Format o) :: `$TitleBkgd set to $TitleBkgd"
