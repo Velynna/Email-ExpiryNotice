@@ -2,7 +2,7 @@
 PowerShell script to email users that their Active Directory password is soon expiring, along with info on how to change it. It is designed to run as a scheduled task on a server with the Active Directory PowerShell module installed.
 
 How to use:
-1. After initial download, scroll to the Begin block and insert your own data.
+1. After downloading Send-ExpiryNotice.ps1, open the file with your preferred text/code editor and scroll to the Begin block and insert your own data.
 2. If you'd like to update the styling on the email to your own, do that in the Begin block as well.
 3. At the very bottom of the script is an invokation. It is initially commented out, so you can test from the CLI. Before setting up the task, uncomment this line. A task will not run a function on its own, so the invokation line is critical to functionality.
 
