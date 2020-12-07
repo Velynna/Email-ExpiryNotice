@@ -10,13 +10,13 @@ Recommended to run once per day.
 
 Update notes from 4.0 to 4.3. (4.1 and 4.2 were done outside of GitHub)
 The Send-MailMessage to user action was outside of the verification region, causing the email to be sent to all users, regardless of expiration status, and the data was scrambled, as it was the verified user's data.
-+Restructured so the send-mailmessage action is in the correct location.
-+Added back in a clear variable region. This will ensure user variables do not get scrambled when looping.
-++ToDo: Create the Verification and Send Email regions as a child function. There were issues with scoping, so everything was put into 1 function, instead.
-+Added new testing parameters: email override, and test ou.
-+Users without email addresses will be added to a hash tabled and included in the Task Complete email.
-+Added event to log start.
-+Added length of run time to completion event, and task complete email.
++ Restructured so the send-mailmessage action is in the correct location.
++ Added back in a clear variable region. This will ensure user variables do not get scrambled when looping.
+  + ToDo: Create the Verification and Send Email regions as a child function. There were issues with scoping, so everything was put into 1 function, instead.
++ Added new testing parameters: email override, and test ou.
++ Users without email addresses will be added to a hash tabled and included in the Task Complete email.
++ Added event to log start.
++ Added length of run time to completion event, and task complete email.
 
 Update notes from 3.0 to 4.0.
 + Formatting updated to be in-line with PowerShell style guidelines (within reason), and best practices.
