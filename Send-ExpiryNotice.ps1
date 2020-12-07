@@ -14,7 +14,7 @@ function Send-ExpiryNotice {
             Updated by:     Antonya Johnston
             Date:           12-02-2020
             Author:         M. Ali (original AD query), Pat Richard, Lync MVP
-            Version:        4.0
+            Version:        4.3.0
     
             Required:
                 + Run as a scheduled task...
@@ -58,6 +58,25 @@ function Send-ExpiryNotice {
         
             Sends the HTML formatted email of the user specified via -PreviewUser. This is used to see what
             the HTML email will look like to the users.
+
+        .EXAMPLE
+            Send-ExpiryNotice -TestOU "OU=IT,OU=Users,DC=contoso,DC=com"
+        
+            Checks only users in a valid, supplied OrganizationalUnit.
+
+        .EXAMPLE
+            Send-ExpiryNotice -EmailOverride email@mail.com
+        
+            All email generated during the runtime will redirect to the entered email address. Emails for
+            individual expiry notices will have the user's email address inserted into the Subject line.
+
+        .EXAMPLE
+            Send-ExpiryNotice -TestOU "OU=IT,OU=Users,DC=contoso,DC=com" -EmailOverride email@mail.com
+        
+            Checks only users in a valid, supplied OrganizationalUnit. Additionally, all email generated during
+            the runtime will redirect to the entered email address. Used together this can prevent a flood of
+            hundreds of emails going to a single test email address. Emails for individual expiry notices will
+            have the user's email address inserted into the Subject line.
     #>
     [CmdletBinding(DefaultParameterSetName = 'Default')]
     param (
@@ -74,12 +93,31 @@ function Send-ExpiryNotice {
                     Mandatory=$false,
                     Position=1)] 
         [String]
-        $PreviewUser = $null
+        $PreviewUser = $null,
+
+        # The OU you'd like to test with. Suggested user group: IT users. Use the DistinguishedName.
+        [Parameter(ParameterSetName = 'Test',
+                   Mandatory=$false,
+                   Position=2)]
+        [ValidateScript({
+            try { [ADSI]::Exists("LDAP://$_") }
+            catch { Throw "The path is invalid."} })]
+        [String]
+        $TestOU = $null,
+
+        # All emails generated will redirect to the entered email address.
+        [Parameter(ParameterSetName = 'Test',
+                   Mandatory=$false,
+                   Position=3)]
+        [System.Net.Mail.MailAddress]
+        $EmailOverride = $null
     )
     begin {
         Write-Debug "$(Get-Date -Format o) :: Entering Begin Block"
         Write-Debug ("$(Get-Date -Format o) :: `$Demo set to $Demo`n" +
               "DEBUG: $(Get-Date -Format o) :: `$PreviewUser set to $PreviewUser`n" +
+              "DEBUG: $(Get-Date -Format o) :: `$TestOU set to $TestOU`n" +
+              "DEBUG: $(Get-Date -Format o) :: `$EmailOverride set to $EmailOverride`n" +
               "DEBUG: $(Get-Date -Format o) :: Parameter Set in use is $($PSCmdlet.ParameterSetName)")
         Write-Verbose -Message "Collecting AD Domain information"
         $Domain = Get-ADDomain
@@ -89,6 +127,7 @@ function Send-ExpiryNotice {
         $PDCEmulator = $Domain | Select-Object -ExpandProperty PDCEmulator
         $DomainDN = $Domain | Select-Object -ExpandProperty DistinguishedName
         [Int]$i = 0
+        $Skipped = @()
         $ScriptName = $MyInvocation.MyCommand.Name
 
         $Props = @("PasswordExpired", "PasswordNeverExpires", "PasswordLastSet", "Name", "Mail")
@@ -108,7 +147,7 @@ function Send-ExpiryNotice {
             $CoSupport = "help@contoso.com"
             $StreetAddress = "1234 56th St Ste 789"
             $City = "City Name"
-            $ST = "ST"
+            $State = "ST"
             $Zip = "012345"
             $CoSite = "https://www.contoso.com"
             $PasswordResetSite = "https://subdomain.contoso.com"
@@ -117,6 +156,8 @@ function Send-ExpiryNotice {
             # Calculations. Do nott replace!
             $CoTel = ($CoPhone -replace "\D+")
             $Address = "$StreetAddress<br />$City, $State $Zip"
+            if ($TestOU) { $RootUsersDN = $TestOU }
+            if ($EmailOverride) { $TaskComplete = $EmailOverride }
         #endRegion
 
         #region StyleSheet
@@ -177,7 +218,6 @@ function Send-ExpiryNotice {
                 $TitleBar = "
                     width: 100%; 
                     color: $TitleColor;
-                    background-color: $TitleBkgd; 
                     text-decoration: none; 
                     padding: 0;
                 "
@@ -213,16 +253,19 @@ function Send-ExpiryNotice {
         if ($Demo){
             Write-Verbose -Message "Demo mode"
             Write-Output -InputObject "`n"
-            Write-Host ('{0,-25}{1,-8}{2,-12}' -f 'User', 'Expires', 'PolicyDays') -ForegroundColor cyan
-            Write-Host ('{0,-25}{1,-8}{2,-12}' -f '========================', '=======', '==========='
-                        ) -ForegroundColor cyan
+            Write-Host ('{0,-25}{1,-8}{2,-12}{3,-25}' -f 'User', 'Expires', 'PolicyDays', 'Email'
+                       ) -ForegroundColor Cyan
+            Write-Host ('{0,-25}{1,-8}{2,-12}{3,-25}' -f '========================', '=======', '===========',
+                        '===============') -ForegroundColor Cyan
         }
     
-        Write-Verbose -Message "Setting event log configuration"
+       Write-Verbose -Message "Setting event log configuration"
         [Object]$evt = New-Object -TypeName System.Diagnostics.EventLog -ArgumentList ('Application')
         [String]$evt.Source = $ScriptName
         $InfoEvent = [Diagnostics.EventLogEntryType]::Information
         [String]$EventLogText = "Beginning processing"
+        $evt.WriteEntry($EventLogText,$infoevent,70)
+        $Timer =  [System.Diagnostics.Stopwatch]::StartNew()
         
         Write-Verbose -Message "Getting password policy configuration"
         $DomainPP = Get-ADDefaultDomainPasswordPolicy
@@ -261,9 +304,9 @@ function Send-ExpiryNotice {
                         $AccountFGPP = Get-ADUserResultantPasswordPolicy $User.samAccountName
                         $AccountFGPP = $AccountFGPP | Select-Object -ExpandProperty MaxPasswordAge
                         if ($AccountFGPP) {
-                            $MaxPswdAge = $AccountFGPP
+                            $MaxPswdAge = $AccountFGPP.TotalDays
                         } else {
-                            $MaxPswdAge = $DomainMaxPswdAge
+                            $MaxPswdAge = $DomainMaxPswdAge.TotalDays
                         }
                         if (!($MaxPswdAge) -or ($MaxPswdAge.TotalMilliseconds -ne 0)) {
                             Write-Debug "$(Get-Date -Format o) :: `$MaxPswdAge set to $MaxPswdAge"
@@ -272,7 +315,7 @@ function Send-ExpiryNotice {
                             } else {
                                 $Params = @{
                                     Start = (Get-Date)
-                                    End = ($PswdLastSet + $MaxPswdAge)
+                                    End = ($PswdLastSet + $MaxPswdAge).ToString()
                                 }
                                 $DaysTillExpire = [System.Math]::round(((New-TimeSpan @Params).TotalDays),0)
                             }
@@ -281,11 +324,10 @@ function Send-ExpiryNotice {
                                 Write-Debug "$(Get-Date -Format o) :: `$DaysToWarn set to $DaysToWarn"
                                 Write-Verbose -Message "Preparing email for user."
                                 $i++
-                                if ($Demo) {
-                                    Write-Host ('{0,-25}{1,-8}{2,-12}' -f $User.Name, +
-                                                $DaysTillExpire, $MaxPswdAge)
-                                } else {
-                                    if (!($TitleBkgd)) {
+                                if (!($Demo)) {
+                                    if ($CustTitleBkgd) {
+                                        $TitleBkgd = $CustTitleBkgd
+                                    } else {
                                         if ($DaysTillExpire -le 2) {
                                             $TitleBkgd = '#E74C3C'
                                         } elseif ($DaysTillExpire -le 7) {
@@ -296,13 +338,17 @@ function Send-ExpiryNotice {
                                             $TitleBkgd = $H1BgColor
                                         }
                                     }
+                                    # Holds original values so it can clean before each loop.
+                                    $TitleBarReset = $TitleBar
+                                    $TitleBar += "background-color: $TitleBkgd`;"
                                     Write-Debug "$(Get-Date -Format o) :: `$TitleBkgd set to $TitleBkgd"
                                     $GivenName = $User.GivenName
                                     Write-Debug "$(Get-Date -Format o) :: `$GivenName set to $GivenName"
                                     $DateofExpiration = (Get-Date).AddDays($DaysTillExpire)
                                     # Second Get-Date used to reformat first call.
                                     $DateofExpiration = (Get-Date -Date ($DateofExpiration) -Format $DateFormat)
-                                    Write-Debug "$(Get-Date -Format o) :: `$DateofExpiration set to $DateofExpiration"
+                                    Write-Debug ("$(Get-Date -Format o) :: `$DateofExpiration set to" +
+                                                "$DateofExpiration")
                                     Write-Verbose -Message 'Assembling email message'
                                     [String]$EmailBody = @"
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
@@ -461,40 +507,66 @@ password.</p>
 </html>
 "@
                                     Write-Debug "$(Get-Date -Format o) :: `$EmailBody set to $EmailBody"
-                                } # end if ($Demo)
+                                } # end if (!($Demo))
+                                #region SendEmail to User
+                                    if ($EmailOverride) { 
+                                        $EmailTo = $EmailOverride
+                                        $EmailSubject = ("To: $($User.mail) Your password expires in" +
+                                                        "$DaysTillExpire day(s)")
+                                    } else {
+                                        $EmailTo = $User.mail
+                                        $EmailSubject = "Your password expires in $DaysTillExpire day(s)"
+                                    }
+                                    if (!($Demo)) {
+                                        Write-Debug "$(Get-Date -Format o) :: Entering #region SendEmail to User"
+                                        if ($EmailTo) {
+                                            Write-Verbose -Message "Sending message to $EmailTo"
+                                            $MailParams = @{
+                                                To = $EmailTo
+                                                From = $EmailFrom
+                                                Subject = $EmailSubject
+                                                Body = $EmailBody
+                                                Priority = "High"
+                                                BodyAsHTML = $true
+                                                SMTPServer = $SmtpServer
+                                            }
+                                            Send-MailMessage @MailParams
+                                        } else {
+                                            $Skipped += [PSCustomObject]@{
+                                                Name = $User.Name
+                                                Username = $User.samAccountName
+                                                DaysRemaining = $DaysTillExpire
+                                            }
+                                        }
+                                    } else {
+                                        Write-Host ('{0,-25}{1,-8}{2,-12}{3,-25}' -f $User.Name, $DaysTillExpire,
+                                                                $MaxPswdAge, $EmailTo)
+                                    }
+                                #endregion
                             } # end if ($DaysTillExpire -le $DaysToWarn)
                         } # end if (!($MaxPswdAge) -or ($MaxPswdAge.TotalMilliseconds -ne 0))
                     } # end if ($PswdLastSet)
                 #endregion
-            } # end Validation Check
-
-            #region SendEmail to User
-                if (!($Demo)) {
-                    Write-Debug "$(Get-Date -Format o) :: Entering #region SendEmail to User"
-                    $EmailTo = $User.mail
-                    if ($EmailTo) {
-                        Write-Verbose -Message "Sending message to $EmailTo"
-                        $MailParams = @{
-                            To = $EmailTo
-                            From = $EmailFrom
-                            Subject = "Your password expires in $DaysTillExpire day(s)"
-                            Body = $EmailBody
-                            Priority = "High"
-                            BodyAsHTML = $true
-                            SMTPServer = $SmtpServer
-                        }
-                        Send-MailMessage @MailParams
-                    } else {
-                        Write-Verbose -Message "Can not email this user. Email address is blank"
-                    }
-                }
-            #endregion
             
+                #region ClearVariables
+                    # Without the clear, if there is an issue accessing an account's data, data from a previous
+                    # user's will be used instead. This causes confusion.
+                    ("User","PswdLastSet","AccountFGPP","MaxPswdAge","DaysTillExpire","GivenName","EmailBody",
+                    "EmailSubject","DateofExpiration","EmailTo","TitleBkgd") |
+                    ForEach-Object { 
+                        Try { Clear-Variable $_ }
+                        Catch {}
+                    }
+                    $TitleBar = $TitleBarReset
+                #endRegion ClearVariables
+            } # end Validation Check
         } # end ForEach User
 
         if ($Demo) { Write-Host "Accounts Processed: $i" }
         Write-Verbose -Message 'Writing summary event log entry'
-        $EventLogText = "Send-ExpiryNotice.ps1 finished processing $i account(s)."
+        $Timer.Stop()
+        $TimeElapsed = [System.Math]::Round($Timer.Elapsed.TotalMinutes,0)
+        $EventLogText = "Send-ExpiryNotice.ps1 finished processing $i account(s) after $TimeElapsed minutes."
         $evt.WriteEntry($EventLogText,$infoevent,70)
 
         if (!($PreviewUser) -and !($Demo)) {
@@ -503,8 +575,28 @@ password.</p>
             $CompletedBody = @"
 <p>This message is to notify you that the scheduled task to send email notifications to users whose password are
 expiring within $DaysToWarn days has completed successfully.</p>
+<p>Total Processing Time (minutes): $TimeElapsed</p>
 <p>Accounts Processed: $i</p>
+<table>
+    <thead>
+        <tr>
+            <th>Skipped User</th>
+            <th>Username</th>
+            <th>Days Remaining</th>
+        </tr>
+    </thead>
+    <tbody>
 "@
+            foreach ($s in $Skipped) { 
+                $CompletedBody += @"
+        <tr>
+            <td>$($s.Name)</td>
+            <td>$($s.Username)</td>
+            <td>$($s.DaysRemaining)</td>
+        </tr>
+"@}
+            $CompletedBody += "</tbody></table>"
+
             $CompletedParams = @{
                 To = $TaskComplete
                 From = $EmailFrom
@@ -524,4 +616,4 @@ expiring within $DaysToWarn days has completed successfully.</p>
 }
 
 # Invokation for scheduled task
-# Send-ExpiryNotice
+Send-ExpiryNotice
